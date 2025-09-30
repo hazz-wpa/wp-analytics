@@ -1,6 +1,5 @@
-select * from ANALYTICS_DB.RPT_PRODUCT.WISE_PLATFORM_CASES
-limit 100;
-
-testing changes
-
-asdfsf
+select 
+    business_name,
+    partner_region
+from ANALYTICS_DB.RPT_PRODUCT.WISE_PLATFORM_CASES
+limit 10;
