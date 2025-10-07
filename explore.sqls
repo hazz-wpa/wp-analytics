@@ -1,4 +1,101 @@
-select 
-    business_name,
-    partner_region
-from ANALYTICS_DB.RPT_PRODUCT.WISE_PLATFORM_CASES;
+-- Servicing metrics
+-- Superset dashboard: https://superset.tw.ee/superset/dashboard/6907/?native_filters_key=fZ4kK2q15H6mhJPdxvT50kjAxAYH2xRdM87qY8aCOLDKphZoXQbiPQQw4KtH3w9H
+with all_cases as (
+    select
+        team,
+        created_at,
+        date_trunc('month', created_at) as created_at_month,
+        unique_case_id,
+        first_response_time__weekday_total,
+        contacts_on_case,
+        end_to_end_time__weekday_total,
+        end_to_end_time__total,
+        resolved_at,
+        department
+    from
+        analytics_db.rpt_product.wise_platform_cases
+    where
+        team in ('WPES', 'IS')
+),
+enterprise_support_metrics as (
+    select
+        team,
+        created_at_month,
+        count(distinct unique_case_id) as case_count,
+        count(
+            iff(
+                first_response_time__weekday_total / 3600 < 1,
+                unique_case_id,
+                null
+            )
+        ) / nullifzero(count(distinct unique_case_id)) as cases_with_1hr_response_time,
+        count(
+            iff(
+                iff(
+                    team in ('WPES', 'IS'),
+                    iff(
+                        contacts_on_case > 0,
+                        end_to_end_time__weekday_total,
+                        null
+                    ),
+                    end_to_end_time__total
+                ) / 3600 < 24,
+                unique_case_id,
+                null
+            )
+        ) / nullifzero(
+            count(
+                iff(
+                    resolved_at is not null
+                    and (
+                        department != 'SUPPORT'
+                        or (
+                            department = 'SUPPORT'
+                            and contacts_on_case > 0
+                        )
+                    ),
+                    unique_case_id,
+                    null
+                )
+            )
+        ) as cases_with_24hr_resolution_time
+    from
+        all_cases
+    where
+        team = 'WPES'
+    group by
+        team,
+        created_at_month
+)
+select
+    team,
+    created_at_month,
+    case_count,
+    lag(case_count, 1) over (
+        order by
+            created_at_month
+    ) as previous_case_count,
+    case_count / lag(case_count, 1) over (
+        order by
+            created_at_month
+    ) - 1 as case_count_uplift,
+    cases_with_1hr_response_time,
+    lag(cases_with_1hr_response_time, 1) over (
+        order by
+            created_at_month
+    ) as previous_cases_with_1hr_response_time,
+    cases_with_1hr_response_time / lag(cases_with_1hr_response_time, 1) over (
+        order by
+            created_at_month
+    ) - 1 as cases_with_1hr_response_time_uplift,
+    cases_with_24hr_resolution_time,
+    lag(cases_with_24hr_resolution_time, 1) over (
+        order by
+            created_at_month
+    ) as previous_24hr_time,
+    cases_with_24hr_resolution_time / lag(cases_with_24hr_resolution_time, 1) over (
+        order by
+            created_at_month
+    ) - 1 as cases_with_24hr_resolution_time_uplift
+from
+    enterprise_support_metrics;
