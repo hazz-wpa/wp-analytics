@@ -99,3 +99,50 @@ select
     ) - 1 as cases_with_24hr_resolution_time_uplift
 from
     enterprise_support_metrics;
+
+
+-- INTEGRATION SUCCESS (PLATFORM PARTNERS)
+with cases as (
+    select
+        team,
+        date_trunc('month', created_at) as created_at_month,
+        unique_case_id,
+        first_response_time__weekday_total,
+        contacts_on_case,
+        end_to_end_time__weekday_total,
+        end_to_end_time__total,
+        resolved_at,
+        department
+    from
+        analytics_db.rpt_product.wise_platform_cases
+    where
+        team = 'IS'
+        and case_type = 'WISE PLATFORM PARTNERS'
+)
+select 
+    team,
+    created_at_month,
+    count(distinct unique_case_id) as case_count,
+    count(iff(first_response_time__weekday_total / 3600 < 0.25, unique_case_id, null)) / nullifzero(count(iff(contacts_on_case > 0, unique_case_id, null))) as cases_with_15m_response,
+    count(
+    iff(
+        iff(team in ('WPES', 'IS'), iff(contacts_on_case > 0, end_to_end_time__weekday_total, null), end_to_end_time__total) / 3600 < 24,
+        unique_case_id,
+        null
+    )
+) / nullifzero(
+    count(
+        iff(
+            resolved_at is not null 
+            and (department != 'SUPPORT' or (department = 'SUPPORT' and contacts_on_case > 0)),
+            unique_case_id,
+            null
+        )
+    )
+) as cases_with_24hr_resolution
+from cases
+group by team,
+    created_at_month
+order by created_at_month;
+
+    
